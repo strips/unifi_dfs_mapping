@@ -1,0 +1,64 @@
+services:
+  fjord-radar:
+    build: .
+    image: fjord-radar:local
+    container_name: fjord-radar
+    restart: unless-stopped
+
+    # Run as the invoking host user so the bind-mounted ./data is
+    # writable without chown gymnastics. PUID / PGID default to 1000.
+    user: "${PUID:-1000}:${PGID:-1000}"
+
+    env_file:
+      # Real secrets live here. The file is gitignored; only
+      # secrets.example.env is committed.
+      - secrets/secrets.env
+
+    environment:
+      FJORD_CONFIG: /app/config/config.yaml
+      FJORD_DATA_DIR: /data
+      FJORD_LOG_LEVEL: ${FJORD_LOG_LEVEL:-INFO}
+
+    volumes:
+      # Non-secret runtime config (gitignored). Edit on host, reload by
+      # restarting the container.
+      - ./config:/app/config:ro
+      # Persistent state (SQLite + CSV).
+      - ${FJORD_DATA_DIR:-./data}:/data
+
+    ports:
+      # Host UDP 514 (UniFi default) → container's unprivileged 5514.
+      - "${FJORD_HOST_PORT:-514}:5514/udp"
+      # Built-in stats web page. Bind to 127.0.0.1 if you don't want
+      # it reachable from your LAN — see docs/SETUP.md.
+      - "${FJORD_WEB_PORT:-8080}:8080/tcp"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Optional bundled Grafana. If you already have a Grafana, point it at
+  # ./data/events.db with the SQLite plugin and import the dashboards
+  # under grafana/provisioning/dashboards/ — see docs/GRAFANA.md.
+  grafana:
+    image: grafana/grafana-oss:11.2.0
+    container_name: fjord-grafana
+    restart: unless-stopped
+    profiles: ["viz"]
+    env_file:
+      - secrets/secrets.env
+    environment:
+      GF_INSTALL_PLUGINS: frser-sqlite-datasource
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ${FJORD_DATA_DIR:-./data}:/data:ro
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+volumes:
+  grafana-data:

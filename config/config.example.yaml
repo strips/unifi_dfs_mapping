@@ -1,0 +1,117 @@
+# Project Fjord-Radar — runtime configuration
+#
+# Copy this file to `config/config.yaml` and edit. The path to this file
+# is gitignored so secrets in it would still leak — DON'T put secrets here.
+# Real secrets (controller username/password, Grafana admin pw) live in
+# `secrets/secrets.env`, populated as environment variables.
+
+# ---------------------------------------------------------------------------
+# UniFi Network controller (your UDR)
+# ---------------------------------------------------------------------------
+controller:
+  # LAN URL of the UDR. UniFi OS uses HTTPS with a self-signed cert.
+  url: "https://192.168.1.1"
+  # Most home setups use site "default".
+  site: "default"
+  # Set to true if you've installed your own trusted cert on the UDR.
+  verify_tls: false
+  # username / password are read from environment (UNIFI_USERNAME /
+  # UNIFI_PASSWORD), never from YAML. Create a *local-only* admin user in
+  # UniFi → Admins → "Restrict to local access only".
+
+# ---------------------------------------------------------------------------
+# Which AP to drive
+# ---------------------------------------------------------------------------
+target:
+  # The display name shown in the UniFi UI for the AP under test.
+  ap_name: "AC-HD"
+  # Radio to drive: "na" = 5 GHz, "ng" = 2.4 GHz, "6e" = 6 GHz.
+  radio: "na"
+
+# ---------------------------------------------------------------------------
+# Scan plan
+# ---------------------------------------------------------------------------
+scan:
+  # If false, the program ONLY listens for syslog and never touches the
+  # controller. Set true once you've verified everything else.
+  enabled: false
+
+  # Channel widths (MHz) to test. Wider widths require ALL of their 20 MHz
+  # sub-channels to be non-blacklisted.
+  widths: [20, 40, 80]
+
+  # 5 GHz channel pool. Anything outside this list is ignored.
+  # Standard ETSI/Norway DFS-eligible primaries:
+  channels:
+    - 36
+    - 40
+    - 44
+    - 48
+    - 52
+    - 56
+    - 60
+    - 64
+    - 100
+    - 104
+    - 108
+    - 112
+    - 116
+    - 120
+    - 124
+    - 128
+    - 132
+    - 136
+    - 140
+    - 144
+    - 149
+    - 153
+    - 157
+    - 161
+    - 165
+
+  # Channels to *never* test (e.g. local weather radar slots).
+  blacklist_channels:
+    - 124
+    - 128
+
+  # Specific (channel, width) combos to skip even if both are otherwise
+  # allowed. Useful to skip a wide combo while still testing its 20 MHz
+  # primaries.
+  blacklist_combos: []
+  #   - { channel: 100, width: 80 }
+
+  # How long a trial must survive on a channel before it's considered
+  # "clean" and we rotate.
+  dwell_hours: 24
+
+  # After a radar hit forces the AP off, wait this long before applying
+  # the next trial (lets DFS CAC / NOL settle).
+  cooldown_after_radar_minutes: 30
+
+  # round_robin | shuffle
+  strategy: "round_robin"
+
+  # How often the scheduler polls SQLite for new radar events on the
+  # current trial. 60 s is plenty.
+  poll_seconds: 60
+
+# ---------------------------------------------------------------------------
+# Built-in stats web page
+# ---------------------------------------------------------------------------
+web:
+  enabled: true
+  bind_host: "0.0.0.0"
+  bind_port: 8080
+
+# ---------------------------------------------------------------------------
+# Syslog listener
+# ---------------------------------------------------------------------------
+syslog:
+  bind_host: "0.0.0.0"
+  bind_port: 5514
+
+# Where SQLite + CSV are written. Inside the container this is /data;
+# override via FJORD_DATA_DIR env if needed.
+data_dir: "/data"
+
+log_level: "INFO"

@@ -1,0 +1,9 @@
+apiVersion: 1
+
+datasources:
+  - name: Fjord-SQLite
+    type: frser-sqlite-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      path: /data/events.db

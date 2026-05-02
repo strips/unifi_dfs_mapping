@@ -1,0 +1,34 @@
+{
+  "title": "Fjord-Radar — DFS Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-30d", "to": "now" },
+  "panels": [
+    {
+      "type": "table",
+      "title": "MTBD per (host, channel)",
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "Fjord-SQLite" },
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 12 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryText": "WITH s AS (\n  SELECT host, channel,\n         SUM((julianday(COALESCE(ended_at, datetime('now'))) - julianday(started_at)) * 24) AS hours\n  FROM sessions GROUP BY host, channel\n),\nd AS (\n  SELECT host, channel, COUNT(*) AS detections, MAX(ts) AS last_radar\n  FROM events WHERE kind='radar' AND channel IS NOT NULL\n  GROUP BY host, channel\n)\nSELECT s.host, s.channel,\n       ROUND(s.hours, 2)                            AS active_hours,\n       COALESCE(d.detections, 0)                    AS detections,\n       CASE WHEN COALESCE(d.detections,0)=0 THEN NULL\n            ELSE ROUND(s.hours / d.detections, 2) END AS mtbd_hours,\n       d.last_radar\nFROM s LEFT JOIN d ON s.host=d.host AND s.channel=d.channel\nORDER BY s.host, s.channel;"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Radar detections over time",
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "Fjord-SQLite" },
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryText": "SELECT strftime('%Y-%m-%d', ts) AS time, channel, COUNT(*) AS detections FROM events WHERE kind='radar' AND channel IS NOT NULL GROUP BY 1,2 ORDER BY 1;",
+          "timeColumns": ["time"]
+        }
+      ]
+    }
+  ]
+}
