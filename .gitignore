@@ -1,0 +1,23 @@
+# --- Secrets / runtime config (NEVER commit) -------------------------
+.env
+secrets/*.env
+!secrets/*.example.env
+
+# Real runtime config may contain network topology specifics. Only the
+# template is committed.
+config/*.yaml
+!config/*.example.yaml
+
+# --- Runtime data (SQLite, CSV, logs) --------------------------------
+data/
+
+# --- Python ----------------------------------------------------------
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# --- Editor / OS -----------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
