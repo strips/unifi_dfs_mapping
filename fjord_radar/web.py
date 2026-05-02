@@ -14,6 +14,7 @@ existing reverse proxy if you need access from outside.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Any, Callable, Optional
 
@@ -51,11 +52,44 @@ _TEMPLATE = """<!doctype html>
     .pending { background: #fff5cc; color: #7a5a00; }
     .muted { color: #888; }
     code { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; }
+    .counter { display: inline-block; margin: 0 1.5rem 0 0;
+               vertical-align: top; }
+    .counter .v { display: block; font-size: 2.4rem; font-weight: 700;
+                  font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .counter .l { display: block; font-size: .8rem; color: #666;
+                  text-transform: uppercase; letter-spacing: .04em; }
+    .counter.hot .v { color: #b34d4d; }
+    .counter.cool .v { color: #14571a; }
+    .bar { display: inline-block; height: 14px; background: #b34d4d;
+           vertical-align: middle; border-radius: 2px; }
+    .bar-cell { padding: 2px 6px; }
+    .bar-cell .lbl { display: inline-block; width: 3.5em;
+                     font-variant-numeric: tabular-nums; color: #555; }
+    .bar-cell .cnt { display: inline-block; width: 3em; text-align: right;
+                     font-variant-numeric: tabular-nums; color: #333;
+                     margin-left: .4rem; }
   </style>
 </head>
 <body>
   <h1>Fjord-Radar</h1>
   <div class="sub">UniFi DFS / radar channel mapper</div>
+
+  <section style="margin-top: 0;">
+    <div class="counter {{ 'hot' if (timing.total or 0) > 0 else 'cool' }}">
+      <span class="v">{{ timing.total or 0 }}</span>
+      <span class="l">Radar pings</span>
+    </div>
+    {% if listener %}
+    <div class="counter">
+      <span class="v">{{ listener.packets_total }}</span>
+      <span class="l">Syslog packets</span>
+    </div>
+    <div class="counter">
+      <span class="v">{{ listener.events_total }}</span>
+      <span class="l">DFS events</span>
+    </div>
+    {% endif %}
+  </section>
 
   <section>
     <h2>Listener</h2>
@@ -163,6 +197,53 @@ _TEMPLATE = """<!doctype html>
   </section>
 
   <section>
+    <h2>Radar timing
+      {% if timing %}<span class="muted" style="font-size: .7em;">
+        ({{ timing.total }} radar events, TZ={{ timing.tz }})
+      </span>{% endif %}
+    </h2>
+    {% if timing and timing.total > 0 %}
+      <div style="display: flex; gap: 3rem; flex-wrap: wrap;">
+        <div>
+          <h3 style="font-size: 1em; margin: 0 0 .4rem 0;">Hour of day</h3>
+          <table>
+            <tbody>
+            {% for h in range(24) %}
+              {% set cnt = timing.by_hour[h] %}
+              {% set pct = (cnt * 100 / timing.hour_max) if timing.hour_max else 0 %}
+              <tr><td class="bar-cell">
+                <span class="lbl">{{ '%02d'|format(h) }}:00</span>
+                <span class="bar" style="width: {{ pct * 1.6 }}px;"></span>
+                <span class="cnt">{{ cnt }}</span>
+              </td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3 style="font-size: 1em; margin: 0 0 .4rem 0;">Day of week</h3>
+          <table>
+            <tbody>
+            {% set days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+            {% for d in range(7) %}
+              {% set cnt = timing.by_dow[d] %}
+              {% set pct = (cnt * 100 / timing.dow_max) if timing.dow_max else 0 %}
+              <tr><td class="bar-cell">
+                <span class="lbl">{{ days[d] }}</span>
+                <span class="bar" style="width: {{ pct * 2.4 }}px;"></span>
+                <span class="cnt">{{ cnt }}</span>
+              </td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% else %}
+      <p class="muted">No radar events recorded yet.</p>
+    {% endif %}
+  </section>
+
+  <section>
     <h2>Recent trials</h2>
     <table>
       <thead>
@@ -220,7 +301,7 @@ _TEMPLATE = """<!doctype html>
     Auto-refresh every 10 s. JSON: <code>/api/stats</code>,
     <code>/api/trials</code>, <code>/api/events</code>,
     <code>/api/status</code>, <code>/api/listener</code>,
-    <code>/healthz</code>.
+    <code>/api/radar_timing</code>, <code>/healthz</code>.
   </p>
 </body>
 </html>
@@ -266,6 +347,13 @@ def build_app(
     listener_stats: Optional[Callable[[], dict[str, Any]]] = None,
 ) -> Flask:
     app = Flask(__name__)
+    tz_name = os.environ.get("FJORD_TZ") or os.environ.get("TZ") or "UTC"
+
+    def _timing() -> dict[str, Any]:
+        t = storage.radar_timing(tz_name)
+        t["hour_max"] = max(t["by_hour"]) if t["by_hour"] else 0
+        t["dow_max"] = max(t["by_dow"]) if t["by_dow"] else 0
+        return t
 
     @app.get("/")
     def index() -> Any:
@@ -283,6 +371,7 @@ def build_app(
             events=events,
             current=current,
             listener=listener,
+            timing=_timing(),
         )
 
     @app.get("/api/stats")
@@ -306,6 +395,10 @@ def build_app(
         if listener_stats is None:
             return jsonify({})
         return jsonify(_decorate_listener(listener_stats()))
+
+    @app.get("/api/radar_timing")
+    def api_radar_timing() -> Any:
+        return jsonify(storage.radar_timing(tz_name))
 
     @app.get("/healthz")
     def healthz() -> Any:

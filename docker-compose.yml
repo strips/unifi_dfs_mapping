@@ -18,6 +18,10 @@ services:
       FJORD_CONFIG: /app/config/config.yaml
       FJORD_DATA_DIR: /data
       FJORD_LOG_LEVEL: ${FJORD_LOG_LEVEL:-INFO}
+      # Local time zone for radar-timing histograms (hour-of-day,
+      # day-of-week). UTC if unset. Override via .env or shell.
+      TZ: ${TZ:-Europe/Oslo}
+      FJORD_TZ: ${TZ:-Europe/Oslo}
 
     volumes:
       # Non-secret runtime config (gitignored). Edit on host, reload by

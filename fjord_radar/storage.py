@@ -27,6 +27,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore[assignment,misc]
+
 from .parser import Event
 
 SCHEMA = """
@@ -291,6 +296,44 @@ class Storage:
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def radar_timing(self, tz_name: Optional[str] = None) -> dict[str, Any]:
+        """Histogram radar events by hour-of-day and day-of-week in the
+        requested local TZ. UTC if `tz_name` is unset / unknown / zoneinfo
+        unavailable. Day numbering: 0=Monday ... 6=Sunday (Python convention).
+        """
+        tz = timezone.utc
+        if tz_name and ZoneInfo is not None:
+            try:
+                tz = ZoneInfo(tz_name)
+            except Exception:
+                tz = timezone.utc
+
+        rows = self._conn.execute(
+            "SELECT ts FROM events WHERE kind='radar'"
+        ).fetchall()
+
+        by_hour = [0] * 24
+        by_dow = [0] * 7
+        total = 0
+        for r in rows:
+            try:
+                dt = datetime.fromisoformat(r["ts"])
+            except Exception:
+                continue
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            local = dt.astimezone(tz)
+            by_hour[local.hour] += 1
+            by_dow[local.weekday()] += 1
+            total += 1
+
+        return {
+            "tz": str(tz),
+            "total": total,
+            "by_hour": by_hour,
+            "by_dow": by_dow,
+        }
 
     def conn(self) -> sqlite3.Connection:
         return self._conn

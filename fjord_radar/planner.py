@@ -113,6 +113,11 @@ def build_trials(
 def order(trials: list[Trial], strategy: str) -> list[Trial]:
     if strategy == "round_robin":
         return list(trials)
+    if strategy == "wide_first":
+        # All widest trials first (e.g. every 80 MHz combo), then all
+        # 40 MHz, then all 20 MHz. Within each width band sort by
+        # channel ascending. Round-robin then cycles in that order.
+        return sorted(trials, key=lambda t: (-t.width_mhz, t.channel))
     if strategy == "shuffle":
         out = list(trials)
         random.shuffle(out)
