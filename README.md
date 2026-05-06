@@ -7,7 +7,9 @@ stable, widest 5 GHz channel by:
 2. Optionally driving the target AP through a **planned sequence of
    (channel, width) trials** via the UniFi Network REST API.
 3. Recording every event + every trial into SQLite (+ append-only CSV).
-4. Serving a built-in stats web page and JSON API on TCP/8080.
+4. Serving a built-in stats web page and JSON API on TCP/8080, including
+   a **5 GHz channel spectrum map** that colour-codes every channel and
+   width combination by observed cleanliness.
 
 > The name is purely thematic — the project sits between Drammensfjorden
 > and Oslofjorden, hence "Fjord-Radar". Rename freely; nothing in the
@@ -37,9 +39,9 @@ fjord_radar/
 ├── parser.py         Regex for DFS-RADAR / DFS-NEW-CHANNEL / CAC events
 ├── planner.py        Builds the (channel, width) trial set
 ├── scheduler.py      Drives the AP through trials, owns `trials` rows
-├── unifi_client.py   Minimal UniFi Network REST client
+├── unifi_client.py   Minimal UniFi Network REST client (country detection)
 ├── storage.py        SQLite (WAL) + CSV; thread-safe writes
-├── web.py            Flask stats page + JSON API
+├── web.py            Flask stats page + JSON API + channel spectrum map
 └── report.py         CLI report (tabulate)
 
 config/
@@ -67,7 +69,7 @@ echo "PUID=$(id -u)" >> .env
 echo "PGID=$(id -g)" >> .env
 
 # 2. Edit config/config.yaml (controller URL, target AP, channel pool,
-#    blacklist). Leave scan.enabled=false for now.
+#    blacklist, region). Leave scan.enabled=false for now.
 
 # 3. Edit secrets/secrets.env with your local UniFi admin user
 #    (Network → Settings → Admins → "Restrict to local access only").
@@ -79,9 +81,33 @@ docker compose logs -f fjord-radar
 
 Open http://localhost:8080/ — the live dashboard.
 
-## Enabling channel cycling
+## 5 GHz channel spectrum map
 
-When you're ready for the program to actually move the radio:
+The dashboard includes a channel spectrum map showing every DFS-eligible
+5 GHz channel and width combination (20 / 40 / 80 / 160 MHz rows). Each
+cell is colour-coded:
+
+| Colour | Meaning |
+|---|---|
+| Light blue | Non-DFS — excluded from scanning by design |
+| White / dashed border | DFS — not enabled in scan pool or explicitly blacklisted |
+| Green (pale → deep) | DFS — clean, shade deepens with observed hours |
+| Amber → red | DFS — radar detected, intensity scales with hit rate (log) |
+| Light grey | Not available in this regulatory region |
+| Dark grey | UNII-4 (169/173/177) — not in region |
+| Diagonal stripe | Weather-radar overlap channels (120/124/128) |
+
+Channels 36–48 are always light blue (non-DFS); channels 52 and above
+that are enabled in your country are white until observed, then green or
+red. Wide cells (e.g. 36–64 at 160 MHz) that span both DFS and non-DFS
+sub-channels are treated as DFS.
+
+The country/regulatory domain is **auto-detected from the UniFi
+controller** at startup (uses the country code stored in site settings).
+You can also pin it manually via `region.country_code` in
+`config/config.yaml` and set `region.auto_detect: false`.
+
+The raw cell data is also available at `GET /api/channel_map`. for the program to actually move the radio:
 
 1. Verify in the UniFi UI that you can log in as your *local-only* user
    and that your test AP is reachable by name.
@@ -90,6 +116,11 @@ When you're ready for the program to actually move the radio:
 4. `docker compose restart fjord-radar`.
 5. Watch http://localhost:8080/ — the "Current trial" badge should
    appear within a minute.
+
+**Restart / rebuild safety:** if the container is stopped mid-trial (e.g.
+for a code update), the trial is recorded as `interrupted` and will be
+retried on the next start rather than skipped. Only trials that completed
+naturally (`dwell_complete` or `radar`) advance the queue.
 
 ## Strategy: finding the widest stable channel
 

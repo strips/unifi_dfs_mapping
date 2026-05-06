@@ -69,12 +69,24 @@ class SyslogConfig:
 
 
 @dataclass(frozen=True)
+class RegionConfig:
+    # ISO 3166-1 numeric country code.  578 = Norway (EU/ETSI rules).
+    # Used to grey out channels that are not legal in the local regulatory
+    # domain on the channel spectrum map.
+    country_code: int = 578
+    # When true, fjord-radar will try to read the country code from the
+    # UniFi controller at startup and use that instead of country_code.
+    auto_detect: bool = True
+
+
+@dataclass(frozen=True)
 class AppConfig:
     controller: ControllerConfig
     target: TargetConfig
     scan: ScanConfig
     web: WebConfig
     syslog: SyslogConfig
+    region: RegionConfig
     data_dir: str
     log_level: str = "INFO"
 
@@ -158,6 +170,12 @@ def load(path: str | os.PathLike[str] | None = None) -> AppConfig:
         bind_port=int(sys_raw.get("bind_port", 5514)),
     )
 
+    reg_raw = raw.get("region") or {}
+    region = RegionConfig(
+        country_code=int(reg_raw.get("country_code", 578)),
+        auto_detect=bool(reg_raw.get("auto_detect", True)),
+    )
+
     data_dir = os.environ.get("FJORD_DATA_DIR", raw.get("data_dir", "./data"))
     log_level = os.environ.get(
         "FJORD_LOG_LEVEL", raw.get("log_level", "INFO")
@@ -180,6 +198,7 @@ def load(path: str | os.PathLike[str] | None = None) -> AppConfig:
         scan=scan,
         web=web,
         syslog=syslog,
+        region=region,
         data_dir=data_dir,
         log_level=log_level,
     )

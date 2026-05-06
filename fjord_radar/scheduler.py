@@ -102,7 +102,36 @@ class Scheduler:
             )
         ordered = order(trials, scan.strategy)
         log.info("plan has %d trials (%s)", len(ordered), scan.strategy)
-        return deque(ordered)
+        q: deque[Trial] = deque(ordered)
+
+        # Resume round-robin after a restart.
+        # - Completed trial (dwell_complete / radar): advance past it.
+        # - Interrupted trial (SIGTERM mid-dwell): put it back at the front
+        #   so the dwell accumulates rather than being wasted.
+        last = self._storage.last_trial()
+        if last:
+            target = Trial(last["channel"], last["width_mhz"])
+            interrupted = last.get("ended_by") in (None, "interrupted")
+            for _ in range(len(q)):
+                if q[0] == target:
+                    if interrupted:
+                        log.info(
+                            "queue resumed at interrupted trial: %s",
+                            target.label(),
+                        )
+                        # target is already at the front — do not rotate.
+                    else:
+                        q.rotate(-1)   # step past it to the next unseen trial
+                        log.info(
+                            "queue resumed after completed trial: %s",
+                            target.label(),
+                        )
+                    break
+                q.rotate(-1)
+            # If target wasn't found (removed from plan), the full rotation
+            # brought the queue back to the beginning — that's fine.
+
+        return q
 
     def _run(self) -> None:
         try:
@@ -112,7 +141,7 @@ class Scheduler:
             return
 
         try:
-            self._client.login()
+            self._client.ensure_logged_in()
         except UnifiError:
             log.exception(
                 "could not authenticate to UniFi controller; scheduler exiting"
@@ -180,6 +209,11 @@ class Scheduler:
             with self._lock:
                 self._current = None
                 self._current_started = None
+            # If the stop signal fired before the dwell or radar conditions
+            # triggered a natural break, the trial was cut short — record
+            # that so the queue can resume it rather than skip past it.
+            if self._stop.is_set() and ended_by == "dwell_complete":
+                ended_by = "interrupted"
             self._storage.end_trial(
                 trial_id, ended_by, radar_count=radar_count
             )

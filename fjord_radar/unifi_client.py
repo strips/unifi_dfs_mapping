@@ -136,6 +136,12 @@ class UnifiClient:
             self._logged_in = False
             self._csrf = None
 
+    def ensure_logged_in(self) -> None:
+        """Log in only if not already authenticated."""
+        with self._lock:
+            if not self._logged_in:
+                self.login()
+
     # -- low-level ---------------------------------------------------------
 
     def _request(
@@ -246,3 +252,19 @@ class UnifiClient:
         # (some firmwares return only meta).
         time.sleep(0.5)
         return self.find_ap(device.name)
+
+    def get_country_code(self) -> int:
+        """Return the ISO 3166-1 numeric country code stored in the UniFi
+        site settings.  Raises ``UnifiError`` if the setting is absent or
+        the response is malformed."""
+        r = self._request(
+            "GET",
+            f"/proxy/network/api/s/{self._site}/rest/setting",
+        )
+        self._raise_for_status(r, "get site settings")
+        for item in r.json().get("data", []):
+            if item.get("key") == "country":
+                code = item.get("code")
+                if code is not None:
+                    return int(code)
+        raise UnifiError("country code not found in site settings")

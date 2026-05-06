@@ -45,3 +45,23 @@ To eventually run wider channels, the underlying 20MHz blocks must be mapped fir
 ## 7. Developer Implementation Plan
 This repo implements that plan. See [`../README.md`](../README.md) for usage
 and [`SETUP.md`](SETUP.md) for the UDR-side configuration.
+
+## 8. Channel Spectrum Map
+The built-in dashboard includes a 5 GHz channel spectrum map \u2014 a grid with
+channels along the X-axis and channel widths (20 / 40 / 80 / 160 MHz) as rows.
+Each cell is colour-coded by observed cleanliness (DFS logic; green deepens with
+clean hours, amber\u2192red scales with radar hit rate on a log scale). Non-DFS
+channels (36\u201348) are always light blue; wide cells that span both DFS and
+non-DFS sub-channels (e.g. 36\u201364 at 160 MHz) are classified as DFS.
+
+Channels not enabled in the scan pool or explicitly blacklisted are shown with
+a dashed border so the map immediately shows what is and isn\u2019t being measured.
+The regulatory domain is auto-detected from the UniFi controller at startup so
+unavailable channels are greyed out without any manual configuration.
+
+## 9. Scheduler Resilience
+Each trial is recorded in SQLite with an `ended_by` field. On clean shutdown
+(SIGTERM) or hard kill, the last trial is marked `interrupted` (or left with
+`ended_by=NULL`). On the next start the scheduler detects this and retries the
+same trial rather than advancing to the next one. Only trials that ended
+naturally (`dwell_complete` or `radar`) advance the round-robin queue.

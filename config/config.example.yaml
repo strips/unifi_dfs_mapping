@@ -110,6 +110,20 @@ syslog:
   bind_host: "0.0.0.0"
   bind_port: 5514
 
+# ---------------------------------------------------------------------------
+# Region / regulatory domain
+# ---------------------------------------------------------------------------
+region:
+  # ISO 3166-1 numeric country code used to colour-code channels on the
+  # spectrum map (grey = not legal here).  578 = Norway (EU/ETSI rules).
+  # Common codes: 276=DE  250=FR  826=UK  840=US  36=AU  392=JP
+  country_code: 578
+
+  # When true, fjord-radar will query the UniFi controller at startup and
+  # use its stored country code instead of the value above.  Falls back to
+  # country_code if the controller is unreachable or scan is disabled.
+  auto_detect: true
+
 # Where SQLite + CSV are written. Inside the container this is /data;
 # override via FJORD_DATA_DIR env if needed.
 data_dir: "/data"

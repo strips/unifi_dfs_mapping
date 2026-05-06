@@ -89,3 +89,21 @@ web:
 
 Also change the compose port mapping line to `"127.0.0.1:8080:8080/tcp"`
 if you want a hard guarantee Docker won't expose it.
+
+## 8. Country / regulatory region
+
+The channel spectrum map colours channels according to what is legal in
+your country. By default, fjord-radar queries the UniFi controller at
+startup and reads the country code from its site settings
+(`auto_detect: true` in `config.yaml`).
+
+If you want to pin the country manually (e.g. when `scan.enabled=false`
+and no controller login happens), set:
+
+```yaml
+region:
+  auto_detect: false
+  country_code: 578   # ISO 3166-1 numeric — 578=NO, 276=DE, 840=US, 826=GB
+```
+
+Common codes: 250=FR, 36=AU, 392=JP, 756=CH.

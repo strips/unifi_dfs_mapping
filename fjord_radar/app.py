@@ -54,6 +54,7 @@ def run(cfg: AppConfig) -> int:
 
     stop = threading.Event()
     scheduler: Optional[Scheduler] = None
+    country_code: int = cfg.region.country_code
     if cfg.scan.enabled:
         client = UnifiClient(
             url=cfg.controller.url,
@@ -62,6 +63,16 @@ def run(cfg: AppConfig) -> int:
             site=cfg.controller.site,
             verify_tls=cfg.controller.verify_tls,
         )
+        if cfg.region.auto_detect:
+            try:
+                country_code = client.get_country_code()
+                log.info("country code detected from controller: %d", country_code)
+            except Exception as exc:
+                log.warning(
+                    "could not detect country code from controller (%s); "
+                    "falling back to config value %d",
+                    exc, cfg.region.country_code,
+                )
         scheduler = Scheduler(cfg, storage, client, stop)
         scheduler.start()
         log.info("scan enabled — controller=%s ap=%s",
@@ -74,6 +85,8 @@ def run(cfg: AppConfig) -> int:
         web = WebServer(
             storage, scheduler, cfg.web.bind_host, cfg.web.bind_port,
             listener_stats=listener.stats,
+            scan_config=cfg.scan,
+            country_code=country_code,
         )
         web.start()
 

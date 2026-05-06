@@ -297,6 +297,15 @@ class Storage:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def last_trial(self) -> Optional[dict[str, Any]]:
+        """Return the channel/width_mhz/ended_by of the most recently *started*
+        trial (any outcome, including in-progress), or None if no trials exist.
+        Used by the scheduler to resume the round-robin queue after a restart."""
+        row = self._conn.execute(
+            "SELECT channel, width_mhz, ended_by FROM trials ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
     def radar_timing(self, tz_name: Optional[str] = None) -> dict[str, Any]:
         """Histogram radar events by hour-of-day and day-of-week in the
         requested local TZ. UTC if `tz_name` is unset / unknown / zoneinfo

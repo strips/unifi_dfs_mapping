@@ -31,12 +31,14 @@ _80MHZ_GROUPS: tuple[tuple[int, ...], ...] = (
     (116, 120, 124, 128),
     (132, 136, 140, 144),
     (149, 153, 157, 161),
+    (165, 169, 173, 177),
 )
 
 # 160 MHz groups (UniFi/UNII): 36-64 and 100-128 are the realistic ones.
 _160MHZ_GROUPS: tuple[tuple[int, ...], ...] = (
     (36, 40, 44, 48, 52, 56, 60, 64),
     (100, 104, 108, 112, 116, 120, 124, 128),
+    (149, 153, 157, 161, 165, 169, 173, 177),
 )
 
 # 40 MHz pairs (lower primary first).
@@ -46,7 +48,13 @@ _40MHZ_PAIRS: tuple[tuple[int, int], ...] = (
     (100, 104), (108, 112), (116, 120), (124, 128),
     (132, 136), (140, 144),
     (149, 153), (157, 161),
+    (165, 169), (173, 177),
 )
+
+# Public aliases — use these for read-only lookups outside planner.py.
+GROUPS_80 = _80MHZ_GROUPS
+GROUPS_160 = _160MHZ_GROUPS
+GROUPS_40 = _40MHZ_PAIRS
 
 
 @dataclass(frozen=True, order=True)
