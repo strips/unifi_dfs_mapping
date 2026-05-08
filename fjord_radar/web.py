@@ -228,8 +228,8 @@ def _cell_color(
             tooltip_extra = "Not enabled in scan pool"
         return {"bg": bg, "classes": classes, "tooltip_extra": tooltip_extra}
 
-    if hours < 0.5:
-        # No data yet
+    if hours < 0.5 and radar == 0:
+        # Not enough observation time yet and no hits — show as no-data.
         bg = "#f0f0f0"
         return {"bg": bg, "classes": classes, "tooltip_extra": tooltip_extra}
 
@@ -340,6 +340,23 @@ def _build_channel_map(
         # For wide cells (40/80/160 MHz), force DFS rules if any sub-channel
         # is DFS — e.g. 36@160 spans 36–64, where 52–64 are DFS channels.
         cell_channels = group if group is not None else [ch]
+        # If any sub-channel in the group is not legal in this region,
+        # the entire wide combo is invalid — render as unavailable grey.
+        unavail = [c for c in cell_channels if c not in available_set]
+        if unavail:
+            unavail_str = ", ".join(str(c) for c in unavail)
+            return {
+                "ch": ch,
+                "label": label or str(ch),
+                "colspan": colspan,
+                "bg": "#c8c8c8",
+                "classes_str": "ch-cell ch-unavail",
+                "tooltip": (
+                    f"ch {ch} @ {width} MHz | "
+                    f"Not available in this region (ch {unavail_str} excluded)"
+                ),
+                "is_gap": False,
+            }
         force_dfs = any(c in _DFS_CHANNELS for c in cell_channels)
         color_info = _cell_color(
             ch, hours, radar, scan_set, blacklist_set, available_set, cur_ch,
