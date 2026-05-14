@@ -289,6 +289,26 @@ class Storage:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def recent_events_grouped(self, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent events grouped by (host, kind, channel, width_mhz).
+
+        Each row shows the most-recent timestamp and a count of how many
+        times that exact combination was logged.  Ordered by most recent
+        occurrence first.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT MAX(ts) AS ts, host, kind, channel, width_mhz,
+                   COUNT(*) AS count
+              FROM events
+             GROUP BY host, kind, channel, width_mhz
+             ORDER BY MAX(id) DESC
+             LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def recent_trials(self, limit: int = 30) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             "SELECT id, ap_name, channel, width_mhz, started_at, ended_at, "
@@ -305,6 +325,40 @@ class Storage:
             "SELECT channel, width_mhz, ended_by FROM trials ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return dict(row) if row else None
+
+    def prior_interrupted_hours(
+        self, ap_name: str, channel: int, width_mhz: int
+    ) -> float:
+        """Sum the duration of consecutive trailing interrupted trials for this
+        (ap_name, channel, width_mhz) combo, newest first, stopping as soon as
+        a non-interrupted trial is found.  This is the credit to subtract from
+        the dwell period when resuming after a restart.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT started_at, ended_at, ended_by
+              FROM trials
+             WHERE ap_name=? AND channel=? AND width_mhz=?
+               AND ended_at IS NOT NULL
+             ORDER BY id DESC
+            """,
+            (ap_name, channel, width_mhz),
+        ).fetchall()
+        total = 0.0
+        for r in rows:
+            if r["ended_by"] != "interrupted":
+                break
+            try:
+                s = datetime.fromisoformat(r["started_at"])
+                e = datetime.fromisoformat(r["ended_at"])
+                if s.tzinfo is None:
+                    s = s.replace(tzinfo=timezone.utc)
+                if e.tzinfo is None:
+                    e = e.replace(tzinfo=timezone.utc)
+                total += (e - s).total_seconds() / 3600.0
+            except Exception:
+                pass
+        return total
 
     def radar_timing(self, tz_name: Optional[str] = None) -> dict[str, Any]:
         """Histogram radar events by hour-of-day and day-of-week in the

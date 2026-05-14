@@ -94,6 +94,98 @@ class StorageTests(unittest.TestCase):
             finally:
                 s.close()
 
+    def _make_trial(
+        self, s: Storage, ap: str, ch: int, w: int,
+        start: str, end: str, ended_by: str,
+    ) -> None:
+        tid = s.start_trial(ap, ch, w)
+        # Patch started_at to a known value.
+        s._conn.execute(
+            "UPDATE trials SET started_at=? WHERE id=?", (start, tid)
+        )
+        s._conn.execute(
+            "UPDATE trials SET ended_at=?, ended_by=? WHERE id=?",
+            (end, ended_by, tid),
+        )
+
+    def test_prior_interrupted_hours_single(self):
+        """One interrupted trial → credit those hours."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = Storage(tmp)
+            try:
+                self._make_trial(
+                    s, "AP", 112, 20,
+                    "2026-05-12T14:00:00+00:00",
+                    "2026-05-12T16:11:00+00:00",
+                    "interrupted",
+                )
+                h = s.prior_interrupted_hours("AP", 112, 20)
+                self.assertAlmostEqual(h, 2 + 11 / 60, places=2)
+            finally:
+                s.close()
+
+    def test_prior_interrupted_hours_multiple(self):
+        """Two consecutive interrupted trials → sum both."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = Storage(tmp)
+            try:
+                self._make_trial(
+                    s, "AP", 112, 20,
+                    "2026-05-12T14:00:00+00:00",
+                    "2026-05-12T15:00:00+00:00",
+                    "interrupted",
+                )
+                self._make_trial(
+                    s, "AP", 112, 20,
+                    "2026-05-12T15:10:00+00:00",
+                    "2026-05-12T16:10:00+00:00",
+                    "interrupted",
+                )
+                h = s.prior_interrupted_hours("AP", 112, 20)
+                self.assertAlmostEqual(h, 2.0, places=2)
+            finally:
+                s.close()
+
+    def test_prior_interrupted_hours_resets_after_completed(self):
+        """A dwell_complete trial breaks the chain — no credit."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = Storage(tmp)
+            try:
+                self._make_trial(
+                    s, "AP", 112, 20,
+                    "2026-05-11T00:00:00+00:00",
+                    "2026-05-12T00:00:00+00:00",
+                    "dwell_complete",
+                )
+                self._make_trial(
+                    s, "AP", 112, 20,
+                    "2026-05-12T14:00:00+00:00",
+                    "2026-05-12T16:00:00+00:00",
+                    "interrupted",
+                )
+                h = s.prior_interrupted_hours("AP", 112, 20)
+                # Only the trailing interrupted trial counts (2h), not the
+                # dwell_complete before it.
+                self.assertAlmostEqual(h, 2.0, places=2)
+            finally:
+                s.close()
+
+    def test_prior_interrupted_hours_zero_after_radar(self):
+        """A radar trial also breaks the chain."""
+        with tempfile.TemporaryDirectory() as tmp:
+            s = Storage(tmp)
+            try:
+                self._make_trial(
+                    s, "AP", 112, 20,
+                    "2026-05-12T14:00:00+00:00",
+                    "2026-05-12T15:00:00+00:00",
+                    "radar",
+                )
+                h = s.prior_interrupted_hours("AP", 112, 20)
+                self.assertEqual(h, 0.0)
+            finally:
+                s.close()
+
 
 if __name__ == "__main__":
     unittest.main()

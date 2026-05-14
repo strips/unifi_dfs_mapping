@@ -18,6 +18,7 @@ import logging
 import math
 import os
 import threading
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from flask import Flask, jsonify, render_template_string
@@ -64,7 +65,7 @@ _WEATHER_RADAR_CHANNELS: frozenset[int] = frozenset({120, 124, 128})
 # Each entry: (label, channels, gap_before, sub_labels)
 # sub_labels: list of (header_text, col_count) to render multiple header cells
 # for one logical band (used for UNII-1/2A which share a 160 MHz group).
-_BAND_DEFS = [
+_BAND_DEFS: list[tuple[str, list[int], bool, Optional[list[tuple[str, int]]]]] = [
     ("UNII-1/2A",  [36, 40, 44, 48, 52, 56, 60, 64],                       False, [("UNII-1", 4), ("UNII-2A", 4)]),
     ("UNII-2C",    [100,104,108,112,116,120,124,128,132,136,140,144],        True,  None),
     ("UNII-3",     [149, 153, 157, 161, 165],                                True,  None),
@@ -188,7 +189,7 @@ def _cell_color(
     covers 36-64, where 52-64 are DFS).  In that case the non-DFS fast-path
     (solid blue) is bypassed so the cell is coloured by DFS rules.
     """
-    classes = []
+    classes: list[str] = []
     tooltip_extra = ""
 
     if ch == current_ch:
@@ -326,7 +327,7 @@ def _build_channel_map(
 
     def _make_cell(
         ch: int, width: int, colspan: int = 1, label: Optional[str] = None,
-        group: Optional[list] = None,
+        group: Optional[list[int]] = None,
     ) -> dict[str, Any]:
         d = agg_w[width].get(ch, {"hours": 0.0, "radar": 0.0})
         hours = d["hours"]
@@ -386,7 +387,7 @@ def _build_channel_map(
             "is_gap": False,
         }
 
-    bands = []
+    bands: list[dict[str, Any]] = []
     for band_label, channels, gap_before, sub_labels in _BAND_DEFS:
         ch_set = set(channels)
         rows: dict[int, list[dict[str, Any]]] = {20: [], 40: [], 80: [], 160: []}
@@ -465,13 +466,15 @@ def _build_channel_map(
 
 
 def _ranked(stats: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Sort: clean (no detections) first, then highest MTBD, then largest
-    width."""
-    def key(r: dict[str, Any]) -> tuple:
-        det = r["detections"]
-        mtbd = r["mtbd_hours"] if r["mtbd_hours"] is not None else 1e12
-        return (det == 0, mtbd, r["width_mhz"], r["channel"])
-    return sorted(stats, key=key, reverse=True)
+    """Sort: fewest detections first (clean channels on top), then widest
+    channel (more spectrum = more useful), then least active hours (less-
+    explored combos surface earlier so they get more attention).
+    For channels that do have detections, MTBD is shown in the table for
+    comparison but is not used as a sort key — equal-detection combos are
+    ordered by width then hours instead."""
+    def key(r: dict[str, Any]) -> tuple[int, int, float]:
+        return (r["detections"], -r["width_mhz"], r["active_hours"])
+    return sorted(stats, key=key)
 
 
 def _fmt_age(ts: Optional[float], now: float) -> Optional[str]:
@@ -485,6 +488,27 @@ def _fmt_age(ts: Optional[float], now: float) -> Optional[str]:
     if s < 86400:
         return f"{s // 3600}h {(s % 3600) // 60}m"
     return f"{s // 86400}d {(s % 86400) // 3600}h"
+
+
+def _trial_duration(started_at: Optional[str], ended_at: Optional[str]) -> str:
+    """Return a human-readable duration between two ISO timestamps, or '—'."""
+    if not started_at or not ended_at:
+        return "—"
+    try:
+        s = datetime.fromisoformat(started_at)
+        e = datetime.fromisoformat(ended_at)
+        if s.tzinfo is None:
+            s = s.replace(tzinfo=timezone.utc)
+        if e.tzinfo is None:
+            e = e.replace(tzinfo=timezone.utc)
+        total = int((e - s).total_seconds())
+        if total < 0:
+            return "—"
+        if total < 3600:
+            return f"{total // 60}m {total % 60}s"
+        return f"{total // 3600}h {(total % 3600) // 60}m"
+    except Exception:
+        return "—"
 
 
 def _decorate_listener(stats: dict[str, Any]) -> dict[str, Any]:
@@ -814,7 +838,7 @@ _TEMPLATE = """<!doctype html>
     <h2>Recent trials</h2>
     <table>
       <thead>
-        <tr><th>#</th><th>Started</th><th>Ended</th><th>AP</th>
+        <tr><th>#</th><th>Started</th><th>Ended</th><th>Duration</th><th>AP</th>
             <th>Combo</th><th>Outcome</th><th class="num">Radar</th></tr>
       </thead>
       <tbody>
@@ -823,6 +847,7 @@ _TEMPLATE = """<!doctype html>
           <td>{{ t.id }}</td>
           <td class="muted">{{ t.started_at }}</td>
           <td class="muted">{{ t.ended_at or '&#8212;' }}</td>
+          <td class="muted">{{ t.duration_str }}</td>
           <td>{{ t.ap_name }}</td>
           <td><code>ch{{ t.channel }}@{{ t.width_mhz }}</code></td>
           <td>
@@ -847,8 +872,9 @@ _TEMPLATE = """<!doctype html>
     <h2>Recent events</h2>
     <table>
       <thead>
-        <tr><th>Timestamp</th><th>Host</th><th>Kind</th>
-            <th class="num">Channel</th><th class="num">Width</th></tr>
+        <tr><th>Last seen</th><th>Host</th><th>Kind</th>
+            <th class="num">Channel</th><th class="num">Width</th>
+            <th class="num">Count</th></tr>
       </thead>
       <tbody>
       {% for e in events %}
@@ -858,6 +884,7 @@ _TEMPLATE = """<!doctype html>
           <td>{{ e.kind }}</td>
           <td class="num">{{ e.channel or '' }}</td>
           <td class="num">{{ e.width_mhz or '' }}</td>
+          <td class="num {% if e.count > 1 %}muted{% endif %}">{{ e.count }}</td>
         </tr>
       {% endfor %}
       </tbody>
@@ -900,7 +927,9 @@ def build_app(
     def index() -> Any:
         stats = _ranked(storage.trial_stats())
         trials = storage.recent_trials(limit=30)
-        events = storage.recent_events(limit=50)
+        for t in trials:
+            t["duration_str"] = _trial_duration(t.get("started_at"), t.get("ended_at"))
+        events = storage.recent_events_grouped(limit=50)
         current = scheduler.status()["current_trial"] if scheduler else None
         listener = (
             _decorate_listener(listener_stats()) if listener_stats else None

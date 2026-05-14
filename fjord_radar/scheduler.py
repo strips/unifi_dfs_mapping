@@ -27,7 +27,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from .config import AppConfig
 from .planner import Trial, build_trials, order
@@ -70,7 +70,7 @@ class Scheduler:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
-    def status(self) -> dict:
+    def status(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "current_trial": (
@@ -186,7 +186,19 @@ class Scheduler:
             self._current_started = started_at
 
         dwell_seconds = scan.dwell_hours * 3600.0
-        deadline = time.monotonic() + dwell_seconds
+        # Credit hours already served in consecutive prior interrupted trials
+        # for this combo so a restart doesn't reset the full dwell clock.
+        prior_h = self._storage.prior_interrupted_hours(
+            ap_name, trial.channel, trial.width_mhz
+        )
+        remaining_seconds = max(0.0, dwell_seconds - prior_h * 3600.0)
+        if prior_h > 0:
+            log.info(
+                "trial %s crediting %.2fh from prior interrupted run(s); "
+                "remaining dwell %.2fh",
+                trial.label(), prior_h, remaining_seconds / 3600.0,
+            )
+        deadline = time.monotonic() + remaining_seconds
         radar_count = 0
         ended_by = "dwell_complete"
 
