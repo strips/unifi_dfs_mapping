@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Installed via: git config core.hooksPath .githooks (see .github/copilot-instructions.md)
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/check-secrets.sh" --staged
