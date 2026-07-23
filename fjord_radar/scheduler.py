@@ -26,7 +26,7 @@ import logging
 import threading
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from .config import AppConfig
@@ -39,6 +39,17 @@ log = logging.getLogger(__name__)
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _seconds_until_hour(target_hour: int) -> float:
+    """Seconds from now until the next local clock hour == target_hour."""
+    now = datetime.now()
+    candidate = now.replace(
+        hour=target_hour, minute=0, second=0, microsecond=0
+    )
+    if now >= candidate:
+        candidate += timedelta(days=1)
+    return (candidate - now).total_seconds()
 
 
 class Scheduler:
@@ -151,12 +162,21 @@ class Scheduler:
         ap_name = self._cfg.target.ap_name
         radio = self._cfg.target.radio
 
+        # On restart: if the last recorded trial completed cleanly, we may
+        # have missed the transition window while the app was down.  Wait
+        # for it now before applying the first channel of this session.
+        last = self._storage.last_trial()
+        if last and last.get("ended_by") == "dwell_complete":
+            self._wait_for_transition_window()
+
         while not self._stop.is_set():
             trial = queue[0]
             queue.rotate(-1)  # round-robin: move it to the back for next time
-            self._run_trial(ap_name, radio, trial)
+            ended_by = self._run_trial(ap_name, radio, trial)
+            if ended_by == "dwell_complete":
+                self._wait_for_transition_window()
 
-    def _run_trial(self, ap_name: str, radio: str, trial: Trial) -> None:
+    def _run_trial(self, ap_name: str, radio: str, trial: Trial) -> str:
         scan = self._cfg.scan
         log.info("=== trial %s on AP %s/%s ===", trial.label(), ap_name, radio)
 
@@ -175,7 +195,7 @@ class Scheduler:
             )
             self._storage.end_trial(tid, "apply_failed", radar_count=0)
             self._sleep(min(60.0, scan.poll_seconds * 2))
-            return
+            return "apply_failed"
 
         started_at = _now_iso()
         trial_id = self._storage.start_trial(
@@ -234,6 +254,47 @@ class Scheduler:
             cooldown_s = scan.cooldown_after_radar_minutes * 60.0
             log.info("cooldown for %.0fs", cooldown_s)
             self._sleep(cooldown_s)
+
+        return ended_by
+
+    def _wait_for_transition_window(self) -> None:
+        """Block until local time is within the configured transition_hour.
+
+        If transition_hour < 0 (the default), returns immediately so existing
+        behaviour is preserved.  Only called after a clean dwell_complete —
+        radar-forced recoveries still rotate immediately after cooldown.
+
+        The >=24 h guard is satisfied implicitly: dwell_hours is 24 h, so
+        the current trial must have been running for at least that long before
+        we arrive here.  We then wait until the next transition window, which
+        adds at most another 24 h — so the AP always dwells >=24 h between
+        scheduler-driven switches even if a radar hit shortened an earlier
+        trial.
+        """
+        hour = self._cfg.scan.transition_hour
+        if hour < 0:
+            return
+        logged = False
+        while not self._stop.is_set():
+            now = datetime.now()  # local time
+            if now.hour == hour:
+                log.info(
+                    "transition window open (%02d:xx local), advancing to next trial",
+                    hour,
+                )
+                return
+            secs = _seconds_until_hour(hour)
+            if not logged:
+                log.info(
+                    "dwell complete — waiting %.1fh for transition window "
+                    "(local hour %02d:00)",
+                    secs / 3600.0,
+                    hour,
+                )
+                logged = True
+            # Sleep in up-to-1-hour chunks; wake briefly before the window
+            # to avoid overshooting into the following hour.
+            self._sleep(max(1.0, min(secs - 10.0, 3600.0)))
 
     def _sleep(self, seconds: float) -> None:
         """Interruptible sleep that returns early on stop."""

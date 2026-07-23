@@ -95,6 +95,13 @@ scan:
   # current trial. 60 s is plenty.
   poll_seconds: 60
 
+  # Local hour (0-23) at which scheduled channel advances are allowed.
+  # After a dwell completes the scheduler waits until this hour before
+  # switching to the next trial, keeping channel changes out of business
+  # hours.  Radar-forced recoveries still happen immediately after cooldown.
+  # -1 disables the gate (switch as soon as dwell_hours elapses).
+  transition_hour: -1
+
 # ---------------------------------------------------------------------------
 # Built-in stats web page
 # ---------------------------------------------------------------------------

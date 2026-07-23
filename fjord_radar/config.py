@@ -53,6 +53,10 @@ class ScanConfig:
     cooldown_after_radar_minutes: float = 30.0
     strategy: str = "round_robin"  # round_robin | shuffle
     poll_seconds: int = 60          # how often the scheduler checks for radar
+    # Local hour (0-23) when scheduled channel transitions are allowed.
+    # -1 (default) means advance immediately after dwell — old behaviour.
+    # Radar-forced switches always proceed without delay.
+    transition_hour: int = -1
 
 
 @dataclass(frozen=True)
@@ -155,6 +159,7 @@ def load(path: str | os.PathLike[str] | None = None) -> AppConfig:
         ),
         strategy=str(scan_raw.get("strategy", "round_robin")),
         poll_seconds=int(scan_raw.get("poll_seconds", 60)),
+        transition_hour=int(scan_raw.get("transition_hour", -1)),
     )
 
     web_raw = raw.get("web") or {}
