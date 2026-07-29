@@ -41,11 +41,13 @@ if [[ -f "${DATA_ROOT}/secrets/secrets.env" ]]; then
 fi
 
 # Non-secret compose env (mirrors nexus's own .env -- see docs/SETUP.md).
+# FJORD_WEB_PORT=80: the built-in stats page is the primary way to reach
+# this service, so it gets the plain HTTP port instead of nexus's old 8070.
 ctx "$CTID" "cat > /opt/fjord-radar/app/.env <<'ENVEOF'
 PUID=1000
 PGID=1000
 FJORD_HOST_PORT=514
-FJORD_WEB_PORT=8070
+FJORD_WEB_PORT=80
 FJORD_DATA_DIR=/data/state
 FJORD_LOG_LEVEL=INFO
 ENVEOF"
