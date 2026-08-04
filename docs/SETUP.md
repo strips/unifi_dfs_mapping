@@ -4,7 +4,10 @@
 
 UniFi Network → Settings → System → Application Logging:
 * **Remote Syslog Server** — enable
-* **Host** — IP of the machine running this container
+* **Host** — `192.168.1.28` (home-ops-ai's central syslog relay, which
+  forwards unchanged to this container - see `../README.md` "Centralized
+  logging"). Previously this pointed directly at this container's own IP;
+  if the relay is ever removed, point it back here with no code changes.
 * **Port** — `514`
 * **Protocol** — UDP
 

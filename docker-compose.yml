@@ -64,5 +64,16 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
 
+  # Ships this CT's Docker container logs to the fleet-wide Loki instance
+  # (home-ops-ai repo, CT 128). See homelab/README.md "Centralized logging".
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: promtail
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
 volumes:
   grafana-data:

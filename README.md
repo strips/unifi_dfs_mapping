@@ -52,10 +52,32 @@ secrets/
 ├── secrets.example.env   Committed template
 └── secrets.env           Your real secrets (gitignored, chmod 600)
 
-grafana/provisioning/     Drop-in dashboard JSON for any Grafana
+grafana/provisioning/     Drop-in dashboard JSON for any Grafana (app's own
+                          SQLite-backed stats, unrelated to fleet log
+                          shipping below)
 
 tests/                    25 unit tests, no network needed
 ```
+
+## Centralized logging
+
+This CT's `docker-compose.yml` also runs a `promtail` service
+(`docker_sd_configs` against the local Docker socket, `job="fjord-radar"`),
+shipping both `fjord-radar` and its own container logs to the fleet-wide
+Loki instance at `192.168.1.28:3100` (home-ops-ai repo, CT 128). Config:
+`promtail/promtail-config.yaml`. Full architecture/label convention:
+`../homelab/README.md` "Centralized logging".
+
+UniFi's raw syslog traffic is ingested centrally, not here: a relay on
+`home-ops-ai` CT128 (`unifi-syslog-relay`, see that repo) receives the
+UDR's syslog feed, ships it to Loki as `job="unifi"`, and forwards the
+identical UDP datagrams on to this CT's syslog port unchanged — so
+`listener.py`'s own DFS-event parsing needs no code changes and keeps
+working exactly as before, just fed by the relay instead of directly by
+the UDR. If the relay is ever removed, repointing the UDR straight back
+at this CT's `192.168.1.26:514/udp` works with zero code changes on
+either side. Query `{job="fjord-radar", container="fjord-radar"}` in
+Grafana/Loki for this app's own operational logs.
 
 ## Quick start
 
