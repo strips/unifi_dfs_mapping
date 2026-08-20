@@ -48,7 +48,7 @@ for the methodology before touching planner/scheduler logic — MTBD vs
 
 - `containers/fjord-radar.sh` runs against production Proxmox. Anything
   destructive (`pct destroy`, `zfs destroy`, touching `/srv/fjord-radar`)
-  needs explicit user confirmation first — per
-  `../homelab/.github/copilot-instructions.md` ground rules, which all apply
-  here (no `git push` without asking, secrets pre-commit hook active via
-  `core.hooksPath .githooks`, re-run that config after fresh clone).
+  needs explicit user confirmation first — per `../homelab/AGENTS.md` ground
+  rules, which all apply here (no `git add`/`commit`/`push` without asking,
+  secrets pre-commit hook active via `core.hooksPath .githooks`, re-run that
+  config after fresh clone).
