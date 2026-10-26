@@ -68,6 +68,15 @@ Loki instance at `192.168.1.28:3100` (home-ops-ai repo, CT 128). Config:
 `promtail/promtail-config.yaml`. Full architecture/label convention:
 `../homelab/README.md` "Centralized logging".
 
+Since 2026-10-24 this service runs Alloy 1.21.2, using its supported
+Promtail-format configuration reader and persistent `alloy-data` offsets.
+The legacy service/container name is retained for operational compatibility.
+Flask and Requests are patched to 3.1.3 and 2.34.2; the installer rebuilds
+with `--pull` to refresh Python's OS/CA dependencies. Pip is updated for the
+build and removed from the runtime image to avoid shipping its unused
+vendored dependencies. Run `bash containers/fjord-radar.sh` to deploy; the production health
+endpoint is `http://192.168.1.26/healthz`.
+
 UniFi's raw syslog traffic is ingested centrally, not here: a relay on
 `home-ops-ai` CT128 (`unifi-syslog-relay`, see that repo) receives the
 UDR's syslog feed, ships it to Loki as `job="unifi"`, and forwards the

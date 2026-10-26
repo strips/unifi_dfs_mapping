@@ -8,7 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip==26.2.2 \
+    && pip install -r requirements.txt \
+    && pip uninstall --yes pip
 
 COPY fjord_radar ./fjord_radar
 

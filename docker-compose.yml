@@ -48,7 +48,7 @@ services:
   # ./data/events.db with the SQLite plugin and import the dashboards
   # under grafana/provisioning/dashboards/ — see docs/GRAFANA.md.
   grafana:
-    image: grafana/grafana-oss:11.2.0
+    image: grafana/grafana:12.4.13
     container_name: fjord-grafana
     restart: unless-stopped
     profiles: ["viz"]
@@ -67,13 +67,20 @@ services:
   # Ships this CT's Docker container logs to the fleet-wide Loki instance
   # (home-ops-ai repo, CT 128). See homelab/README.md "Centralized logging".
   promtail:
-    image: grafana/promtail:3.1.1
+    image: grafana/alloy:v1.21.2
     container_name: promtail
-    command: -config.file=/etc/promtail/promtail-config.yaml
+    command:
+      - run
+      - --disable-reporting
+      - --config.format=promtail
+      - --storage.path=/var/lib/alloy
+      - /etc/promtail/promtail-config.yaml
     volumes:
       - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy
     restart: unless-stopped
 
 volumes:
   grafana-data:
+  alloy-data:

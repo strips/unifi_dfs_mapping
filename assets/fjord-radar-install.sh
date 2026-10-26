@@ -36,6 +36,7 @@ fi
 # --- fjord-radar ------------------------------------------------------------------
 cd /opt/fjord-radar/app
 echo "[+] Building and starting fjord-radar"
-docker compose up -d --build fjord-radar promtail
+docker compose build --pull fjord-radar
+docker compose up -d fjord-radar promtail
 
 echo "[+] fjord-radar web UI: http://<this-container-ip>:8070/"
